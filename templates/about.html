@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}About · Brugada ECG Analysis{% endblock %}
+
+{% block content %}
+<section class="about-page">
+  <div class="about-hero">
+    <h1>About This Tool</h1>
+    <p>An expert-facing clinical decision-support system for Brugada syndrome detection using machine learning and explainable AI.</p>
+  </div>
+
+  <div class="about-grid">
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-bullseye"></i></div>
+      <h3>Purpose</h3>
+      <p>Analyse 12-lead ECG recordings and provide an interpretable Brugada vs Normal prediction. The tool augments — never replaces — expert clinical judgment.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-user-md"></i></div>
+      <h3>Target Users</h3>
+      <p>Cardiologists, electrophysiologists, clinical researchers and technical evaluators who can interpret results in proper clinical context.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-file-medical-alt"></i></div>
+      <h3>Input Format</h3>
+      <p>WFDB format ECG recordings (.hea + .dat file pairs) containing 12-lead digital signals sampled at standard clinical rates.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-filter"></i></div>
+      <h3>Preprocessing</h3>
+      <p>60 Hz notch filter for powerline noise, high-pass filter at 0.5 Hz for baseline wander, low-pass filter at 45 Hz for high-frequency artefacts.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-cogs"></i></div>
+      <h3>Feature Engineering</h3>
+      <p>Time-domain (mean, RMS, kurtosis…), frequency-domain (spectral power, entropy), and nonlinear (Hjorth parameters) features per lead, plus cross-lead correlations.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-robot"></i></div>
+      <h3>ML Model</h3>
+      <p>Primary classifier is XGBoost, chosen for strong tabular performance and native SHAP compatibility. Random Forest serves as a benchmark.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-lightbulb"></i></div>
+      <h3>Explainability</h3>
+      <p>SHAP (SHapley Additive exPlanations) values decompose each prediction into per-feature contributions, enabling transparent reasoning.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-icon"><i class="fas fa-shield-alt"></i></div>
+      <h3>Safety Notice</h3>
+      <p>This is a research / decision-support tool only. It is not a certified medical device. Predictions must be validated by qualified clinicians before any clinical action.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

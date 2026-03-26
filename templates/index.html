@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Brugada ECG Analysis{% endblock %}
+
+{% block content %}
+
+<!-- ═══ HERO ═══ -->
+<section class="hero">
+  <div>
+    <h1>Brugada <span class="hero-accent">ECG</span> Analysis</h1>
+    <p class="hero-sub">
+      Upload a 12-lead ECG recording and receive an interpretable
+      Brugada&nbsp;vs&nbsp;Normal prediction powered by XGBoost and SHAP
+      explainability.
+    </p>
+    <div class="hero-btns">
+      <a href="#upload" class="btn btn-primary btn-lg">
+        <i class="fas fa-upload"></i> Analyse ECG
+      </a>
+      <a href="{{ url_for('demo') }}" class="btn btn-outline btn-lg">
+        <i class="fas fa-play-circle"></i> Try Demo
+      </a>
+    </div>
+  </div>
+  <div class="hero-visual">
+    <div class="ecg-line-animation">
+      <svg viewBox="0 0 500 100" preserveAspectRatio="none">
+        <polyline class="ecg-trace" points="
+          0,50 40,50 60,50 80,48 90,52 100,50 120,50 140,50
+          155,50 165,20 170,85 175,10 180,70 185,50 200,50
+          220,45 240,50 280,50 300,50 320,48 330,52 340,50
+          360,50 375,50 385,20 390,85 395,10 400,70 405,50
+          420,50 440,45 460,50 500,50"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PROCESSING OVERLAY (standalone, outside hero) ═══ -->
+<div id="processingOverlay">
+  <div class="processing-icon">
+    <i class="fas fa-heartbeat"></i>
+  </div>
+  <h2 class="processing-title">Analysing ECG…</h2>
+  <div class="processing-steps" id="processingSteps">
+    <span class="proc-step" id="step1">
+      <i class="fas fa-circle-notch fa-spin"></i> Loading ECG signals
+    </span>
+    <span class="proc-step" id="step2">
+      <i class="fas fa-clock"></i> Preprocessing filters
+    </span>
+    <span class="proc-step" id="step3">
+      <i class="fas fa-clock"></i> Extracting features
+    </span>
+    <span class="proc-step" id="step4">
+      <i class="fas fa-clock"></i> Running XGBoost model
+    </span>
+    <span class="proc-step" id="step5">
+      <i class="fas fa-clock"></i> Computing SHAP explanations
+    </span>
+  </div>
+</div>
+
+<!-- ═══ WORKFLOW STEPS ═══ -->
+<section class="workflow">
+  <h2 class="section-title">How It Works</h2>
+  <div class="steps-grid">
+    <div class="step-card">
+      <span class="step-num">1</span>
+      <div class="step-icon"><i class="fas fa-file-upload"></i></div>
+      <h3>Upload ECG</h3>
+      <p>Provide a WFDB-format 12-lead recording (.hea&nbsp;+&nbsp;.dat).</p>
+    </div>
+    <div class="step-card">
+      <span class="step-num">2</span>
+      <div class="step-icon"><i class="fas fa-filter"></i></div>
+      <h3>Preprocessing</h3>
+      <p>Notch, high-pass &amp; low-pass filters remove noise and baseline wander.</p>
+    </div>
+    <div class="step-card">
+      <span class="step-num">3</span>
+      <div class="step-icon"><i class="fas fa-cogs"></i></div>
+      <h3>Feature Extraction</h3>
+      <p>Time, frequency &amp; nonlinear features are computed per lead.</p>
+    </div>
+    <div class="step-card">
+      <span class="step-num">4</span>
+      <div class="step-icon"><i class="fas fa-brain"></i></div>
+      <h3>Prediction &amp; XAI</h3>
+      <p>XGBoost classifies; SHAP explains each feature's contribution.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ UPLOAD FORM ═══ -->
+<section class="upload-section" id="upload">
+  <div class="upload-card">
+    <h2><i class="fas fa-cloud-upload-alt"></i> Upload ECG Recording</h2>
+    <p class="upload-hint">
+      Select the .hea header and .dat signal files from a WFDB record.
+    </p>
+
+    <form id="ecgForm" action="{{ url_for('upload') }}" method="post"
+          enctype="multipart/form-data">
+
+      <div class="file-inputs">
+        <div class="file-box" id="heaBox">
+          <i class="fas fa-file-alt"></i>
+          <span class="file-label">.hea File</span>
+          <span class="file-name" id="heaName">No file chosen</span>
+          <input type="file" id="hea-file" name="hea_file" accept=".hea" required>
+        </div>
+        <div class="file-box" id="datBox">
+          <i class="fas fa-database"></i>
+          <span class="file-label">.dat File</span>
+          <span class="file-name" id="datName">No file chosen</span>
+          <input type="file" id="dat-file" name="dat_file" accept=".dat" required>
+        </div>
+      </div>
+
+      <div style="margin-top: 28px; text-align: center;">
+        <button type="submit" class="btn btn-primary btn-lg"
+                id="submitBtn" style="width:100%; cursor:pointer">
+          <i class="fas fa-bolt"></i> Analyse ECG
+        </button>
+      </div>
+    </form>
+
+    <!-- Demo Alternative -->
+    <div style="margin-top: 24px; text-align: center;">
+      <p style="color: var(--text3); font-size: 0.9rem; margin-bottom: 12px;">
+        Or try with demo data:
+      </p>
+      <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+        <a href="{{ url_for('demo', demo_type='brugada') }}" class="btn btn-outline"
+           style="flex: 1; min-width: 140px;">
+          <i class="fas fa-heartbeat"></i> Demo: Brugada
+        </a>
+        <a href="{{ url_for('demo', demo_type='normal') }}" class="btn btn-outline"
+           style="flex: 1; min-width: 140px;">
+          <i class="fas fa-check-circle"></i> Demo: Normal
+        </a>
+        <a href="{{ url_for('demo', demo_type='random') }}" class="btn btn-outline"
+           style="flex: 1; min-width: 140px;">
+          <i class="fas fa-dice"></i> Random Demo
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ ALL SCRIPTS (after DOM elements exist) ═══ -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+
+    /* ── show selected file name + visual feedback ── */
+    document.getElementById('hea-file').addEventListener('change', function () {
+      var box   = document.getElementById('heaBox');
+      var label = document.getElementById('heaName');
+      if (this.files.length) {
+        label.textContent = this.files[0].name;
+        box.classList.add('has-file');
+      } else {
+        label.textContent = 'No file chosen';
+        box.classList.remove('has-file');
+      }
+    });
+
+    document.getElementById('dat-file').addEventListener('change', function () {
+      var box   = document.getElementById('datBox');
+      var label = document.getElementById('datName');
+      if (this.files.length) {
+        label.textContent = this.files[0].name;
+        box.classList.add('has-file');
+      } else {
+        label.textContent = 'No file chosen';
+        box.classList.remove('has-file');
+      }
+    });
+
+    /* ── single merged submit handler ── */
+    document.getElementById('ecgForm').addEventListener('submit', function () {
+      /* 1 — show processing overlay */
+      var overlay = document.getElementById('processingOverlay');
+      overlay.style.display = 'flex';
+
+      /* 2 — animate processing steps */
+      var steps  = ['step1', 'step2', 'step3', 'step4', 'step5'];
+      var delays = [0, 800, 1600, 2800, 4000];
+
+      steps.forEach(function (id, i) {
+        setTimeout(function () {
+          var el = document.getElementById(id);
+          el.style.color = 'var(--purple)';
+          el.innerHTML =
+            '<i class="fas fa-check-circle"></i> ' + el.textContent.trim();
+
+          if (i + 1 < steps.length) {
+            var next = document.getElementById(steps[i + 1]);
+            next.style.color = 'var(--white)';
+            next.innerHTML =
+              '<i class="fas fa-circle-notch fa-spin"></i> ' +
+              next.textContent.trim();
+          }
+        }, delays[i]);
+      });
+
+      /* 3 — update submit button */
+      var btn = document.getElementById('submitBtn');
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing…';
+      btn.disabled = true;
+      btn.style.opacity = '0.7';
+
+      /* form submits normally — required validation already passed */
+    });
+
+  }); /* end DOMContentLoaded */
+</script>
+
+{% endblock %}

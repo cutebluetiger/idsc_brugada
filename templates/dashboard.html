@@ -1,0 +1,829 @@
+{% extends "base.html" %}
+{% block title %}Results · Brugada ECG Analysis{% endblock %}
+
+{% block content %}
+
+<section class="dash">
+
+  <!-- ═══ ACTION BUTTONS (outside banner) ═══ -->
+  <div class="action-buttons">
+    <a href="{{ url_for('index') }}" class="btn btn-outline">
+      <i class="fas fa-arrow-left"></i> New Analysis
+    </a>
+    <button class="btn btn-primary" onclick="generatePDF(event)">
+      <i class="fas fa-file-pdf"></i> Download Report
+    </button>
+  </div>
+
+  <!-- ═══ RESULT BANNER ═══ -->
+  <div class="result-banner {{ 'brugada' if data.prediction=='Brugada' else 'normal' }}">
+    <div class="result-left">
+      <span class="result-label">Prediction</span>
+      <span class="result-value">{{ data.prediction }}</span>
+    </div>
+
+    <div class="result-center">
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 120 70" class="gauge-svg">
+          <path class="gauge-bg" d="M10,65 A50,50 0 0,1 110,65"/>
+          <path d="M10,65 A50,50 0 0,1 110,65"
+                fill="none" stroke="currentColor"
+                stroke-width="8" stroke-linecap="round"
+                stroke-dasharray="0, 157"
+                class="gauge-fill" id="gaugeFill"
+                data-target="{{ data.probability }}"/>
+        </svg>
+        <div class="gauge-text">
+          <span class="gauge-pct" id="gaugePct">0</span>
+          <span class="gauge-pct-sign">%</span>
+        </div>
+        <span class="gauge-label">Confidence</span>
+      </div>
+    </div>
+
+    <div class="result-right">
+      <div class="metric-pill"><i class="fas fa-wave-square"></i> {{ data.n_leads }} Leads</div>
+      <div class="metric-pill"><i class="fas fa-clock"></i> {{ data.duration }}s</div>
+      <div class="metric-pill"><i class="fas fa-th-list"></i> {{ data.n_features }} Features</div>
+      <div class="metric-pill"><i class="fas fa-tachometer-alt"></i> {{ data.fs }} Hz</div>
+    </div>
+  </div>
+
+  {% if data.is_demo %}
+  <div class="demo-badge">
+    <i class="fas fa-flask"></i> Demo Mode — synthetic ECG signals for illustration
+  </div>
+  {% endif %}
+
+  <!-- ═══ ECG VIEWER ═══ -->
+  <div class="card">
+    <div class="card-header">
+      <h3><i class="fas fa-heartbeat"></i> ECG Signal Viewer</h3>
+      <div class="card-controls">
+        <label class="toggle-label">
+          <input type="checkbox" id="showFiltered" checked/>
+          <span class="toggle-switch"></span> Filtered
+        </label>
+        <select id="leadSelect" class="lead-select"></select>
+        <button class="btn btn-sm" id="showAllLeads">
+          <i class="fas fa-layer-group"></i> All Leads
+        </button>
+      </div>
+    </div>
+    <div id="ecgPlot" class="plot-area"></div>
+  </div>
+
+  <!-- ═══ SHAP WATERFALL ═══ -->
+  <div class="card card-glow-purple">
+    <div class="card-header">
+      <h3><i class="fas fa-chart-bar"></i> SHAP Feature Contributions</h3>
+      <div class="card-controls">
+        <span class="chart-legend">
+          <span class="legend-dot legend-red"></span> Pushes Brugada
+          <span class="legend-dot legend-green"></span> Pushes Normal
+        </span>
+      </div>
+    </div>
+    <div class="neon-bars-wrap" id="shapBarsWrap"></div>
+  </div>
+
+  <!-- ═══ TWO-COL: IMPORTANCE + RADAR ═══ -->
+  <div class="two-col">
+    <div class="card card-glow-magenta">
+      <div class="card-header">
+        <h3><i class="fas fa-sort-amount-down"></i> Feature Importance</h3>
+      </div>
+      <div class="neon-bars-wrap" id="featBarsWrap"></div>
+    </div>
+
+    <div class="card card-glow-emerald">
+      <div class="card-header">
+        <h3><i class="fas fa-project-diagram"></i> Lead Contribution Radar</h3>
+      </div>
+      <div id="radarPlot" class="plot-area"></div>
+    </div>
+  </div>
+
+  <!-- ═══ SHAP DOT PLOT ═══ -->
+  <div class="card card-glow-purple">
+    <div class="card-header">
+      <h3><i class="fas fa-braille"></i> SHAP Impact Distribution</h3>
+      <div class="card-controls">
+        <span class="chart-legend">
+          <span class="legend-gradient"></span>
+          <span class="legend-text-sm">Low</span>
+          <span class="legend-text-sm">High Feature Value</span>
+        </span>
+      </div>
+    </div>
+    <div id="shapDotPlot" class="plot-area"></div>
+  </div>
+
+  <!-- ═══ FEATURE HEATMAP ═══ -->
+  <div class="card card-glow-magenta">
+    <div class="card-header">
+      <h3><i class="fas fa-th"></i> Feature–Lead Heatmap</h3>
+    </div>
+    <div id="heatmapPlot" class="plot-area"></div>
+  </div>
+
+  <!-- ═══ FEATURE TABLE ═══ -->
+  <div class="card">
+    <div class="card-header">
+      <h3><i class="fas fa-table"></i> Extracted Features (Model Inputs)</h3>
+      <input type="text" id="featSearch" class="feat-search" placeholder="Search features…"/>
+    </div>
+    <div class="table-wrap">
+      <table class="feat-table" id="featTable">
+        <thead><tr><th>#</th><th>Feature</th><th>Value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ DISCLAIMER ═══ -->
+  <div class="disclaimer">
+    <i class="fas fa-exclamation-circle"></i>
+    <div>
+      <strong>Clinical Disclaimer:</strong> This tool is intended for
+      decision-support only and must not be used as a standalone diagnostic
+      device. Results should always be reviewed by a qualified clinician.
+    </div>
+  </div>
+
+  <!-- ═══ CLINICAL CONTEXT ═══ -->
+  <div class="card">
+    <div class="card-header">
+      <h3><i class="fas fa-stethoscope"></i> Clinical Context: Brugada Syndrome</h3>
+      <button class="btn btn-sm" onclick="this.closest('.card').querySelector('.context-body').classList.toggle('collapsed')">
+        <i class="fas fa-chevron-down"></i> Toggle
+      </button>
+    </div>
+    <div class="context-body collapsed" style="padding:20px; font-size:.85rem; color:var(--text2); line-height:1.8;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+        <div>
+          <h4 style="color:var(--purple); margin-bottom:8px; font-size:.9rem;">
+            <i class="fas fa-heartbeat"></i> What is Brugada Syndrome?
+          </h4>
+          <p>An inherited cardiac channelopathy causing characteristic ST-segment
+             elevations in right precordial leads (V1–V3). Associated with risk of
+             ventricular fibrillation and sudden cardiac death, particularly during
+             rest or sleep.</p>
+        </div>
+        <div>
+          <h4 style="color:var(--purple); margin-bottom:8px; font-size:.9rem;">
+            <i class="fas fa-search"></i> Why AI-Assisted Screening?
+          </h4>
+          <p>The ECG pattern can be intermittent and subtle. Expert
+             electrophysiology interpretation is not universally available. This
+             tool flags recordings that warrant closer expert review — it does not
+             diagnose.</p>
+        </div>
+        <div>
+          <h4 style="color:var(--purple); margin-bottom:8px; font-size:.9rem;">
+            <i class="fas fa-project-diagram"></i> Key Leads
+          </h4>
+          <p>The model focuses on leads <strong>V1, V2, V3</strong> (right
+             precordial — classic Brugada territory), <strong>II</strong>
+             (inferior reference), and <strong>V4</strong> (anterior transition).
+             This matches established clinical knowledge.</p>
+        </div>
+        <div>
+          <h4 style="color:var(--purple); margin-bottom:8px; font-size:.9rem;">
+            <i class="fas fa-balance-scale"></i> Interpreting the Score
+          </h4>
+          <p>Confidence above <strong>58.4%</strong> triggers a Brugada
+             classification. The model was tuned for <strong>80% recall</strong>
+             (catches 4 out of 5 cases) while maintaining <strong>87.9%
+             specificity</strong> (low false alarm rate).</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MODEL PERFORMANCE CARD ═══ -->
+  <div class="card card-glow-purple">
+    <div class="card-header">
+      <h3><i class="fas fa-chart-line"></i> Model Performance (Held-out Test Set)</h3>
+    </div>
+    <div style="padding:20px; display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:12px;">
+      <div class="metric-card">
+        <span class="metric-label">ROC-AUC</span>
+        <span class="metric-value purple">0.922</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">PR-AUC</span>
+        <span class="metric-value purple">0.818</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Accuracy</span>
+        <span class="metric-value">86.3%</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Recall</span>
+        <span class="metric-value green">80.0%</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Specificity</span>
+        <span class="metric-value">87.9%</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">F1-Score</span>
+        <span class="metric-value">0.706</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Precision</span>
+        <span class="metric-value">63.2%</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Threshold</span>
+        <span class="metric-value purple">0.584</span>
+      </div>
+    </div>
+    <div style="padding:0 20px 16px; font-size:.75rem; color:var(--text3);">
+      <i class="fas fa-info-circle"></i>
+      Evaluated on 73 held-out subjects (15 Brugada, 58 Normal) from PhysioNet
+      Brugada-HUCA dataset. Training used stratified 80/20 split with
+      leakage-aware imputation and correlation pruning.
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══ ALL DASHBOARD SCRIPTS ═══ -->
+<script>
+  /* ═══ Feature name → human explanation ═══ */
+  var FEATURE_EXPLANATIONS = {
+    'V1_perm_entropy':     'Signal complexity in lead V1 — lower values suggest more structured (potentially abnormal) patterns',
+    'V2_E_mid_qrs_norm':   'Normalised energy in QRS frequency band (5–15 Hz) of lead V2',
+    'II_hjorth_mobility':  'Rate of change of signal power in lead II — measures frequency content',
+    'V4_E_mid_qrs_norm':   'Normalised QRS-band energy in lead V4',
+    'V4_E_upper':          'High-frequency energy (30–40 Hz) in lead V4',
+    'V1_skewness':         'Asymmetry of signal amplitude distribution in lead V1',
+    'V1_hjorth_mobility':  'Signal frequency content measure in lead V1',
+    'V1_hjorth_complexity':'Signal complexity beyond mobility in lead V1 — captures waveform irregularity',
+    'II_kurtosis':         'Peakedness of amplitude distribution in lead II — high values indicate sharp QRS peaks',
+    'V4_E_upper_norm':     'Normalised high-frequency energy in lead V4',
+    'V3_E_mid_qrs_norm':   'Normalised QRS-band energy in lead V3',
+    'V2_hjorth_mobility':  'Signal frequency content in lead V2',
+    'V3_E_upper_norm':     'Normalised high-frequency energy in lead V3',
+    'V2_zero_crossing_rate':'How often the signal crosses zero in lead V2 — relates to dominant frequency',
+    'V1_kurtosis':         'Peakedness of amplitude distribution in V1',
+    'II_E_upper_norm':     'Normalised high-frequency energy in lead II',
+    'V1_zero_crossing_rate':'Zero-crossing frequency in lead V1',
+    'II_E_low_pt':         'Low-frequency energy (0.5–5 Hz) in lead II — captures P-wave and T-wave content',
+    'V1_E_high_qrs_norm':  'Normalised high-QRS energy (15–30 Hz) in lead V1',
+    'II_p2p':              'Peak-to-peak amplitude of lead II — measures overall signal strength',
+    'V1_E_mid_qrs_norm':   'Normalised QRS-band energy in lead V1 — key Brugada indicator',
+    'V4_E_low_pt_norm':    'Normalised low-frequency energy in lead V4',
+    'V3_kurtosis':         'Amplitude distribution peakedness in lead V3',
+    'V4_skewness':         'Signal asymmetry in lead V4',
+    'II_E_low_pt_norm':    'Normalised low-frequency energy in lead II',
+  };
+
+  /* ═══ DATA FROM FLASK ═══ */
+  var TIME          = {{ data.time_axis | safe }};
+  var SIG_RAW       = {{ data.signal_data | safe }};
+  var SIG_FILT      = {{ data.filtered_data | safe }};
+  var LEADS         = {{ data.lead_names | tojson }};
+  var TOP_SHAP      = {{ data.top_shap | safe }};
+  var FEAT_IMP      = {{ data.feature_importance | safe }};
+  var ALL_FEATS     = {{ data.all_features | safe }};
+  var DISPLAY_FEATS = {{ data.display_features | safe }};
+  var PRED          = "{{ data.prediction }}";
+
+  /* ═══ NEON PURPLE THEME CONFIG ═══ */
+  var NEON = {
+    bg:     'rgba(18,15,36,0)',
+    paper:  'rgba(18,15,36,0)',
+    grid:   'rgba(140,100,255,0.07)',
+    text:   '#94a3b8',
+    purple: '#a855f7',
+    magenta:'#e879f9',
+    green:  '#34d399',
+    red:    '#f87171',
+    amber:  '#fbbf24',
+    font:   { family: 'Inter', size: 11, color: '#94a3b8' },
+  };
+
+  var NEON_COLORS = [
+    '#a855f7','#e879f9','#34d399','#fbbf24','#f87171',
+    '#c084fc','#fb923c','#818cf8','#22d3ee','#f472b6',
+    '#4ade80','#facc15',
+  ];
+
+  /* ═══ GAUGE ANIMATION ═══ */
+  (function () {
+    var arcEl  = document.getElementById('gaugeFill');
+    var numEl  = document.getElementById('gaugePct');
+    var target = parseFloat(arcEl.dataset.target);
+    var ARC    = 157;
+    var DUR    = 2000;
+
+    function ease(t) {
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    var s = null;
+    function tick(ts) {
+      if (!s) s = ts;
+      var r = Math.min((ts - s) / DUR, 1);
+      var p = ease(r);
+      arcEl.setAttribute('stroke-dasharray', (target / 100 * ARC * p) + ',' + ARC);
+      numEl.textContent = (target * p).toFixed(1);
+      arcEl.style.filter = 'drop-shadow(0 0 ' + (4 + p * 14) + 'px currentColor)';
+      if (r < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        arcEl.setAttribute('stroke-dasharray', (target / 100 * ARC) + ',' + ARC);
+        numEl.textContent = target.toFixed(1);
+      }
+    }
+    setTimeout(function () { requestAnimationFrame(tick); }, 400);
+  })();
+
+  /* ═══ ECG PLOT ═══ */
+  (function () {
+    var sel = document.getElementById('leadSelect');
+    LEADS.forEach(function (l) {
+      var o = document.createElement('option');
+      o.value = l;
+      o.text  = l;
+      sel.appendChild(o);
+    });
+
+    function plotECG(leads, filtered) {
+      var src    = filtered ? SIG_FILT : SIG_RAW;
+      var traces = leads.map(function (l, i) {
+        return {
+          x: TIME, y: src[l], name: l, type: 'scatter', mode: 'lines',
+          line: { width: 1.4, color: NEON_COLORS[i % NEON_COLORS.length] }
+        };
+      });
+      Plotly.newPlot('ecgPlot', traces, {
+        paper_bgcolor: NEON.paper, plot_bgcolor: NEON.bg,
+        margin: { l: 55, r: 20, t: 10, b: 44 },
+        xaxis: { title: { text: 'Time (s)', font: NEON.font }, gridcolor: NEON.grid, zeroline: false, tickfont: NEON.font, linecolor: NEON.grid },
+        yaxis: { title: { text: 'mV', font: NEON.font }, gridcolor: NEON.grid, zeroline: false, tickfont: NEON.font, linecolor: NEON.grid },
+        legend: { orientation: 'h', y: 1.08, font: Object.assign({}, NEON.font, { size: 10 }) },
+        height: 350, font: NEON.font,
+      }, { responsive: true, displaylogo: false });
+    }
+
+    plotECG([LEADS[0]], true);
+
+    sel.addEventListener('change', function () {
+      plotECG([sel.value], document.getElementById('showFiltered').checked);
+    });
+    document.getElementById('showFiltered').addEventListener('change', function (e) {
+      plotECG([sel.value], e.target.checked);
+    });
+    document.getElementById('showAllLeads').addEventListener('click', function () {
+      plotECG(LEADS, document.getElementById('showFiltered').checked);
+    });
+  })();
+
+  /* ═══ SHAP BARS WITH TOOLTIPS ═══ */
+  (function () {
+    var wrap   = document.getElementById('shapBarsWrap');
+    var data   = TOP_SHAP.slice(0, 15);
+    var maxAbs = Math.max.apply(null, data.map(function (d) { return Math.abs(d.value); }).concat([0.001]));
+
+    data.forEach(function (item, i) {
+      var pct         = (Math.abs(item.value) / maxAbs) * 100;
+      var isPos       = item.value > 0;
+      var explanation = FEATURE_EXPLANATIONS[item.name] || '';
+
+      var row = document.createElement('div');
+      row.className = 'neon-bar-row';
+      row.style.animationDelay = (i * 60) + 'ms';
+      row.innerHTML =
+        '<span class="neon-bar-label" title="' + explanation + '" ' +
+        'style="cursor:help;' + (explanation ? 'border-bottom:1px dotted var(--text3);' : '') + '">' +
+        item.name + '</span>' +
+        '<div class="neon-bar-track">' +
+          '<div class="neon-bar-center-line"></div>' +
+          '<div class="neon-bar-fill ' + (isPos ? 'bar-positive' : 'bar-negative') + '" ' +
+          'style="--bar-width:' + pct + '%">' +
+            '<div class="neon-bar-glow"></div>' +
+          '</div>' +
+        '</div>' +
+        '<span class="neon-bar-value ' + (isPos ? 'val-positive' : 'val-negative') + '">' +
+          (item.value > 0 ? '+' : '') + item.value.toFixed(4) +
+        '</span>';
+      wrap.appendChild(row);
+    });
+  })();
+
+  /* ═══ FEATURE IMPORTANCE BARS ═══ */
+  (function () {
+    var wrap   = document.getElementById('featBarsWrap');
+    var data   = FEAT_IMP.slice(0, 20);
+    var maxVal = Math.max.apply(null, data.map(function (d) { return d.abs_value; }).concat([0.001]));
+
+    data.forEach(function (item, i) {
+      var pct = (item.abs_value / maxVal) * 100;
+      var hue = 260 + (i / data.length) * 60;
+
+      var row = document.createElement('div');
+      row.className = 'neon-bar-row importance-row';
+      row.style.animationDelay = (i * 80) + 'ms';
+      row.innerHTML =
+        '<span class="neon-bar-label" title="' + item.name + '">' + item.name + '</span>' +
+        '<div class="neon-bar-track">' +
+          '<div class="importance-bar-fill" style="--bar-width:' + pct + '%; --bar-hue:' + hue + ';">' +
+            '<div class="importance-bar-shine"></div>' +
+            '<div class="importance-bar-particles">' +
+              (pct > 60 ? '<span class="imp-spark"></span><span class="imp-spark s2"></span><span class="imp-spark s3"></span>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<span class="neon-bar-value val-importance">' + item.abs_value.toFixed(4) + '</span>';
+      wrap.appendChild(row);
+    });
+  })();
+
+  /* ═══ RADAR — Lead Contributions ═══ */
+  (function () {
+    var MODEL_LEADS = ['II', 'V1', 'V2', 'V3', 'V4'];
+    var leadScores  = {};
+    MODEL_LEADS.forEach(function (l) { leadScores[l] = 0; });
+
+    TOP_SHAP.forEach(function (item) {
+      MODEL_LEADS.forEach(function (lead) {
+        if (item.name.indexOf(lead + '_') === 0) {
+          leadScores[lead] += Math.abs(item.value);
+        }
+      });
+    });
+
+    var labels = MODEL_LEADS;
+    var values = labels.map(function (l) { return leadScores[l] || 0; });
+    var maxV   = Math.max.apply(null, values.concat([0.001]));
+    var norm   = values.map(function (v) { return (v / maxV) * 100; });
+
+    Plotly.newPlot('radarPlot', [{
+      type: 'scatterpolar',
+      r: norm.concat([norm[0]]),
+      theta: labels.concat([labels[0]]),
+      fill: 'toself',
+      fillcolor: 'rgba(168,85,247,0.08)',
+      line: { color: NEON.purple, width: 2.5 },
+      marker: {
+        size: 8, color: NEON.purple,
+        line: { color: 'rgba(168,85,247,0.5)', width: 2 },
+        symbol: 'diamond',
+      },
+      hovertemplate: '%{theta}: %{r:.1f}%<extra></extra>',
+    }, {
+      type: 'scatterpolar',
+      r: norm.concat([norm[0]]),
+      theta: labels.concat([labels[0]]),
+      fill: 'none',
+      line: { color: 'rgba(232,121,249,0.3)', width: 1, dash: 'dot' },
+      marker: { size: 0 },
+      showlegend: false,
+      hoverinfo: 'skip',
+    }], {
+      polar: {
+        bgcolor: 'rgba(0,0,0,0)',
+        radialaxis: {
+          visible: true, range: [0, 110],
+          gridcolor: 'rgba(140,100,255,0.08)',
+          linecolor: 'rgba(140,100,255,0.1)',
+          tickfont: Object.assign({}, NEON.font, { size: 9 }),
+          ticksuffix: '%',
+        },
+        angularaxis: {
+          gridcolor: 'rgba(140,100,255,0.1)',
+          linecolor: 'rgba(140,100,255,0.15)',
+          tickfont: Object.assign({}, NEON.font, { size: 11, color: '#e2e8f0' }),
+        },
+      },
+      paper_bgcolor: NEON.paper,
+      margin: { l: 60, r: 60, t: 30, b: 30 },
+      height: 380, font: NEON.font, showlegend: false,
+    }, { responsive: true, displaylogo: false });
+  })();
+
+  /* ═══ SHAP DOT PLOT ═══ */
+  (function () {
+    var data   = TOP_SHAP.slice(0, 15).reverse();
+    var vals   = data.map(function (d) { return d.value; });
+    var absMax = Math.max.apply(null, vals.map(Math.abs).concat([0.001]));
+    var colorScale = vals.map(function (v) { return (v / absMax + 1) / 2; });
+
+    Plotly.newPlot('shapDotPlot', [{
+      type: 'scatter', mode: 'markers',
+      x: vals,
+      y: data.map(function (d) { return d.name; }),
+      marker: {
+        size: data.map(function (d) { return 10 + Math.abs(d.value) / absMax * 22; }),
+        color: colorScale,
+        colorscale: [
+          [0,   'rgba(52,211,153,0.9)'],
+          [0.3, 'rgba(168,85,247,0.7)'],
+          [0.5, 'rgba(148,163,184,0.5)'],
+          [0.7, 'rgba(232,121,249,0.7)'],
+          [1,   'rgba(248,113,113,0.9)'],
+        ],
+        line: {
+          width: data.map(function (d) { return 1 + Math.abs(d.value) / absMax * 2; }),
+          color: colorScale.map(function (c) {
+            return c > 0.6 ? 'rgba(248,113,113,0.6)'
+                 : c < 0.4 ? 'rgba(52,211,153,0.6)'
+                 : 'rgba(148,163,184,0.3)';
+          }),
+        },
+        opacity: 0.9,
+      },
+      hovertemplate: '<b>%{y}</b><br>SHAP: %{x:.4f}<extra></extra>',
+    }], {
+      paper_bgcolor: NEON.paper, plot_bgcolor: NEON.bg,
+      margin: { l: 180, r: 40, t: 10, b: 50 },
+      height: 450,
+      xaxis: {
+        title: { text: 'SHAP Value', font: NEON.font },
+        gridcolor: NEON.grid, zeroline: true,
+        zerolinecolor: 'rgba(148,163,184,0.2)', zerolinewidth: 2,
+        tickfont: NEON.font,
+      },
+      yaxis: { automargin: true, tickfont: Object.assign({}, NEON.font, { size: 11 }) },
+      font: NEON.font,
+      shapes: [{
+        type: 'line', x0: 0, x1: 0, y0: -0.5, y1: data.length - 0.5,
+        line: { color: 'rgba(148,163,184,0.15)', width: 1, dash: 'dash' },
+      }],
+    }, { responsive: true, displaylogo: false });
+  })();
+
+  /* ═══ FEATURE–LEAD HEATMAP ═══ */
+  (function () {
+    var HLEADS = ['II', 'V1', 'V2', 'V3', 'V4'];
+
+    var LABELS = {
+      'skewness':           'Skewness',
+      'kurtosis':           'Kurtosis',
+      'p2p':                'Peak-to-Peak',
+      'zero_crossing_rate': 'Zero Cross. Rate',
+      'hjorth_mobility':    'Hjorth Mobility',
+      'hjorth_complexity':  'Hjorth Complexity',
+      'perm_entropy':       'Perm. Entropy',
+      'E_low_pt':           'Energy Low (P/T)',
+      'E_low_pt_norm':      'E Low Norm',
+      'E_mid_qrs':          'Energy Mid (QRS)',
+      'E_mid_qrs_norm':     'E Mid Norm',
+      'E_high_qrs':         'Energy High (QRS)',
+      'E_high_qrs_norm':    'E High Norm',
+      'E_upper':            'Energy Upper',
+      'E_upper_norm':       'E Upper Norm',
+    };
+
+    var typeMap = {};
+    DISPLAY_FEATS.forEach(function (f) {
+      for (var li = 0; li < HLEADS.length; li++) {
+        var lead = HLEADS[li];
+        if (f.name.indexOf(lead + '_') === 0) {
+          var type = f.name.slice(lead.length + 1);
+          if (!typeMap[type]) typeMap[type] = {};
+          typeMap[type][lead] = f.value;
+          break;
+        }
+      }
+    });
+
+    var types      = Object.keys(typeMap);
+    var typeLabels = types.map(function (t) { return LABELS[t] || t; });
+    var zData      = [];
+    var hoverText  = [];
+
+    types.forEach(function (type, ti) {
+      var row = [], hRow = [];
+      HLEADS.forEach(function (lead) {
+        var val = (typeMap[type] && typeMap[type][lead]) ? typeMap[type][lead] : 0;
+        row.push(val);
+        hRow.push(lead + ' · ' + typeLabels[ti] + ': ' + val.toFixed(4));
+      });
+      zData.push(row);
+      hoverText.push(hRow);
+    });
+
+    Plotly.newPlot('heatmapPlot', [{
+      type: 'heatmap',
+      z: zData, x: HLEADS, y: typeLabels,
+      text: hoverText,
+      hovertemplate: '%{text}<extra></extra>',
+      colorscale: [
+        [0,    'rgba(13,10,26,0.9)'],
+        [0.15, 'rgba(88,28,135,0.7)'],
+        [0.35, 'rgba(168,85,247,0.6)'],
+        [0.55, 'rgba(232,121,249,0.5)'],
+        [0.75, 'rgba(248,113,113,0.6)'],
+        [1,    'rgba(251,191,36,0.8)'],
+      ],
+      showscale: true,
+      colorbar: { thickness: 12, len: 0.8, tickfont: NEON.font, outlinewidth: 0, borderwidth: 0 },
+      xgap: 3, ygap: 3,
+    }], {
+      paper_bgcolor: NEON.paper, plot_bgcolor: NEON.bg,
+      margin: { l: 140, r: 60, t: 10, b: 50 },
+      height: 480,
+      xaxis: { tickfont: Object.assign({}, NEON.font, { size: 12, color: '#e2e8f0' }), side: 'bottom' },
+      yaxis: { tickfont: Object.assign({}, NEON.font, { size: 10 }), automargin: true },
+      font: NEON.font,
+    }, { responsive: true, displaylogo: false });
+  })();
+
+  /* ═══ FEATURE TABLE ═══ */
+  (function () {
+    var tb = document.querySelector('#featTable tbody');
+    ALL_FEATS.forEach(function (f, i) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + f.name + '</td><td>' + f.value + '</td>';
+      tb.appendChild(tr);
+    });
+
+    document.getElementById('featSearch').addEventListener('input', function () {
+      var q = this.value.toLowerCase();
+      var rows = tb.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        rows[r].style.display =
+          rows[r].children[1].textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+      }
+    });
+  })();
+</script>
+
+<!-- ═══ PDF GENERATION ═══ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+  async function generatePDF(event) {
+    var btn = event.target.closest('button');
+    var origHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+    btn.disabled = true;
+
+    try {
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf   = new jsPDF('p', 'mm', 'a4');
+      var w     = pdf.internal.pageSize.getWidth();
+      var y     = 15;
+
+      /* ── Header ── */
+      pdf.setFillColor(13, 10, 26);
+      pdf.rect(0, 0, w, 40, 'F');
+      pdf.setTextColor(168, 85, 247);
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Brugada ECG Analysis Report', w / 2, 18, { align: 'center' });
+      pdf.setFontSize(10);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('Clinical Decision Support — Not a Diagnostic Device', w / 2, 26, { align: 'center' });
+      pdf.text('Generated: ' + new Date().toLocaleString(), w / 2, 33, { align: 'center' });
+      y = 50;
+
+      /* ── Prediction Result ── */
+      var isB = PRED === 'Brugada';
+      pdf.setFillColor(isB ? 60 : 20, isB ? 20 : 60, isB ? 20 : 40);
+      pdf.roundedRect(14, y, w - 28, 30, 3, 3, 'F');
+      pdf.setFontSize(14);
+      pdf.setTextColor(isB ? 248 : 52, isB ? 113 : 211, isB ? 113 : 153);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Prediction: ' + PRED, 22, y + 12);
+
+      var prob = parseFloat(document.getElementById('gaugePct').textContent);
+      pdf.setFontSize(11);
+      pdf.text('Confidence: ' + prob.toFixed(1) + '%', 22, y + 22);
+      pdf.setTextColor(148, 163, 184);
+      pdf.setFontSize(9);
+      pdf.text('Threshold: 0.584 | Model: XGBoost (IDSC 2026)', w - 22, y + 22, { align: 'right' });
+      y += 40;
+
+      /* ── Feature Values Table ── */
+      pdf.setFontSize(12);
+      pdf.setTextColor(168, 85, 247);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Model Input Features (25)', 14, y);
+      y += 6;
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+
+      pdf.setFillColor(27, 21, 46);
+      pdf.rect(14, y, w - 28, 6, 'F');
+      pdf.setTextColor(168, 85, 247);
+      pdf.text('#', 16, y + 4);
+      pdf.text('Feature Name', 24, y + 4);
+      pdf.text('Value', w - 40, y + 4);
+      y += 7;
+
+      pdf.setTextColor(148, 163, 184);
+      ALL_FEATS.forEach(function (f, i) {
+        if (y > 275) { pdf.addPage(); y = 15; }
+        if (i % 2 === 0) {
+          pdf.setFillColor(20, 16, 35);
+          pdf.rect(14, y - 3, w - 28, 5, 'F');
+        }
+        pdf.text(String(i + 1), 16, y);
+        pdf.text(f.name, 24, y);
+        pdf.text(String(f.value), w - 40, y);
+        y += 5;
+      });
+      y += 8;
+
+      /* ── SHAP Contributions ── */
+      if (y > 240) { pdf.addPage(); y = 15; }
+      pdf.setFontSize(12);
+      pdf.setTextColor(168, 85, 247);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SHAP Feature Contributions', 14, y);
+      y += 6;
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+
+      pdf.setFillColor(27, 21, 46);
+      pdf.rect(14, y, w - 28, 6, 'F');
+      pdf.setTextColor(168, 85, 247);
+      pdf.text('#', 16, y + 4);
+      pdf.text('Feature', 24, y + 4);
+      pdf.text('SHAP Value', w - 50, y + 4);
+      pdf.text('Direction', w - 25, y + 4);
+      y += 7;
+
+      pdf.setTextColor(148, 163, 184);
+      TOP_SHAP.forEach(function (s, i) {
+        if (y > 275) { pdf.addPage(); y = 15; }
+        if (i % 2 === 0) {
+          pdf.setFillColor(20, 16, 35);
+          pdf.rect(14, y - 3, w - 28, 5, 'F');
+        }
+        pdf.text(String(i + 1), 16, y);
+        pdf.text(s.name, 24, y);
+        pdf.text((s.value > 0 ? '+' : '') + s.value.toFixed(4), w - 50, y);
+        var dir = s.value > 0 ? '→ Brugada' : '→ Normal';
+        pdf.setTextColor(s.value > 0 ? 248 : 52, s.value > 0 ? 113 : 211, s.value > 0 ? 113 : 153);
+        pdf.text(dir, w - 25, y);
+        pdf.setTextColor(148, 163, 184);
+        y += 5;
+      });
+
+      /* ── Charts as images ── */
+      var charts = ['ecgPlot', 'radarPlot', 'shapDotPlot', 'heatmapPlot'];
+      for (var ci = 0; ci < charts.length; ci++) {
+        var chartId = charts[ci];
+        var el = document.getElementById(chartId);
+        if (!el) continue;
+        if (y > 180) { pdf.addPage(); y = 15; }
+        try {
+          var canvas = await html2canvas(el, {
+            backgroundColor: '#0d0a1a', scale: 2, logging: false,
+          });
+          var imgData = canvas.toDataURL('image/png');
+          var ratio   = canvas.height / canvas.width;
+          var imgW    = w - 28;
+          var imgH    = imgW * ratio;
+          pdf.addImage(imgData, 'PNG', 14, y, imgW, Math.min(imgH, 90));
+          y += Math.min(imgH, 90) + 10;
+        } catch (e) {
+          console.warn('Could not capture chart:', chartId);
+        }
+      }
+
+      /* ── Disclaimer Footer ── */
+      pdf.addPage();
+      y = 15;
+      pdf.setFillColor(40, 30, 20);
+      pdf.roundedRect(14, y, w - 28, 35, 3, 3, 'F');
+      pdf.setFontSize(10);
+      pdf.setTextColor(251, 191, 36);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Clinical Disclaimer', 22, y + 10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(200, 180, 120);
+
+      var disc = [
+        'This tool is intended for clinical decision-support only and must not be used',
+        'as a standalone diagnostic device. Results should always be reviewed by a qualified',
+        'clinician. This system has NOT been certified as a medical device.',
+        '',
+        'Model: XGBoost (IDSC 2026 Brugada-HUCA Pipeline)',
+        'Dataset: PhysioNet Brugada-HUCA (363 subjects, 76 Brugada, 287 Normal)',
+        'Threshold: 0.584 | ROC-AUC: 0.922 | PR-AUC: 0.818',
+      ];
+      disc.forEach(function (line, i) {
+        pdf.text(line, 22, y + 18 + i * 4);
+      });
+
+      pdf.save('brugada-ecg-report-' + new Date().toISOString().slice(0, 10) + '.pdf');
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('PDF generation failed. Please try again.');
+    }
+
+    btn.innerHTML = origHTML;
+    btn.disabled  = false;
+  }
+</script>
+
+{% endblock %}
