@@ -6,22 +6,41 @@ A modern web application for **Brugada Syndrome detection** from 12-lead ECG rec
 
 ## 🔬 Model Development (Google Colab)
 
-While this repository focuses on the **web application**, the full machine learning pipeline — including training, tuning, and evaluation — is available here:
-
-👉 https://colab.research.google.com/drive/13TRLD-cDlxFZjOYuD_iYnHdA8tB06dOT?usp=sharing
-
-**What the notebook covers:**
-
-* Data preprocessing & feature engineering
-* XGBoost hyperparameter tuning
-* Cross-validation & evaluation metrics
-* ROC-AUC and Precision-Recall analysis
-* Decision threshold optimization
-* SHAP explainability
-
-📊 This provides transparency into the **model used in this application** and allows full reproducibility for technical evaluation.
+While this repository focuses on the **web application**, the complete machine learning pipeline is documented in the following notebooks:
 
 ---
+
+### 📊 Data Preprocessing & Feature Engineering
+👉 https://colab.research.google.com/drive/1uBeclHM3h9OcFpSkNVnpYfKSF0BSo2WQ?authuser=1#scrollTo=5zxQQggIeL7F
+
+- ECG signal preprocessing (filtering, baseline correction)  
+- Feature extraction (25-feature pipeline)  
+- Data preparation for model training  
+
+---
+
+### ⚙️ Model Tuning (XGBoost)
+👉 https://colab.research.google.com/drive/13TRLD-cDlxFZjOYuD_iYnHdA8tB06dOT?usp=sharing
+
+- Hyperparameter optimization  
+- Model selection strategy  
+- Performance comparison across configurations  
+
+---
+
+### 🤖 Model Validation & Evaluation
+👉 https://colab.research.google.com/drive/1uBeclHM3h9OcFpSkNVnpYfKSF0BSo2WQ?authuser=1#scrollTo=5zxQQggIeL7F
+
+- Cross-validation & test evaluation  
+- ROC-AUC and Precision-Recall analysis  
+- Threshold tuning (recall vs specificity trade-off)  
+- SHAP explainability analysis  
+
+---
+
+📊 These notebooks provide full transparency into the **end-to-end model pipeline**, enabling reproducibility and technical validation.
+
+🧪 Designed for reproducibility — results in this application can be traced back to the notebooks above.
 
 ## 🎯 Features
 
